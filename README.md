@@ -1,7 +1,7 @@
 # Mental Health Crisis Early-Warning System (MHCEWS)
 
 > **IMT 542 — Portable Information Structures | Final Project**
-> Group 5 · University of Washington Information School
+> Feiyang Gao & Maria Wu · University of Washington Information School
 
 ---
 
