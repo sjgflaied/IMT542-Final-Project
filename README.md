@@ -3,7 +3,8 @@
 > **IMT 542 — Portable Information Structures | Final Project**
 > Group 5 · University of Washington Information School
 
-The **Mental Health Crisis Early-Warning System (MHCEWS)** restructures publicly available SAMHSA mental health data into a portable, queryable information structure that predicts which U.S. states are at risk of a mental health crisis surge. The original SAMHSA data exists — but it is not portable. MHCEWS transforms it into a typed JSON schema with computed fields, a REST API, and a command-line analysis tool, so the same data can drive a real-time dashboard, an automated alert, or a staffing decision.
+The **Mental Health Crisis Early-Warning System (MHCEWS)** restructures publicly available CDC PLACES mental health data into a portable, queryable information structure that predicts which U.S. ZIP codes are at risk of a mental health crisis surge.
+The original CDC PLACES data is published as a flat, measure-per-row JSON/CSV through a public API — one row per ZIP code per health measure, requiring pivoting and transformation before any analysis is possible. It exists, but it is not portable for crisis response use. MHCEWS transforms it into a typed, ZIP-code-level JSON schema with computed risk fields and a REST API, so that the same data can drive a real-time dashboard, an automated alert, or a mobile crisis team deployment decision.
 
 **Insight area:** *Predict*.
 
@@ -38,7 +39,7 @@ When the coordinator opens her week, she has no leading indicator of whether cal
 
 #### What MHCEWS Delivers
 
-MHCEWS restructures the same SAMHSA data into a weekly, state-level risk signal accessible via API. A single call to `GET /predict/surge` returns a ranked list of states where care gap and serious mental illness prevalence both exceed the national average — a leading indicator of crisis line overflow. The coordinator gets a typed, machine-readable record per state with `risk_score`, `risk_tier`, and an actionable `surge_probable` flag, plus provenance fields so the underlying NSDUH release and model version are traceable.
+MHCEWS restructures the same data into a weekly, zip code-level risk signal accessible via API. A single call to `GET /predict/surge` returns a ranked list of states where care gap and serious mental illness prevalence both exceed the national average — a leading indicator of crisis line overflow. The coordinator gets a typed, machine-readable record per state with `risk_score`, `risk_tier`, and an actionable `surge_probable` flag, plus provenance fields so the underlying NSDUH release and model version are traceable.
 
 #### Motivation
 
@@ -48,11 +49,11 @@ Mental health crisis response in the United States is delivered by a fragmented 
 
 #### Functional Requirements
 
-1. Return aggregate mental-health prevalence and a computed risk score for each of the 50 U.S. states.
-2. Support lookup by individual state abbreviation.
+1. Return aggregate mental-health prevalence and a computed risk score.
+2. Support lookup by individual zip-code level abbreviation.
 3. Support filtering by computed risk tier (`High`, `Moderate`, `Low`).
-4. Return a national-summary endpoint with averages and tier counts.
-5. Return a surge-prediction endpoint listing only states that meet the surge criterion.
+4. Return a summary endpoint with averages and tier counts.
+5. Return a surge-prediction endpoint listing only zip codes that meet the surge criterion.
 6. Every response must include provenance fields (`data_source`, `model_version`).
 7. The data file backing the API must be regenerable from a single Python script.
 
@@ -67,7 +68,7 @@ Mental health crisis response in the United States is delivered by a fragmented 
 
 #### In Scope
 
-- State-level aggregate risk prediction (50 U.S. states)
+- Zipcode-level aggregate risk prediction
 - Weekly cadence (model recomputes on demand from the latest CSV release)
 - Public, no-auth read access to aggregate risk scores
 - Surge prediction based on `care_gap × smi_pct`
@@ -123,13 +124,13 @@ Because MHCEWS is an API-first product, the "wireframe" is the JSON response con
 ```text
 MHCEWS — High-Risk States (model_version 0.1.0, samhsa_nsduh_2023)
 ─────────────────────────────────────────────────────────────────
-RANK  STATE  RISK_SCORE  RISK_TIER  CARE_GAP  SURGE
-  1   OR     118.4       High       13.2      ✓
-  2   WA     108.3       High       11.7      ✓
-  3   MT     106.9       High       12.0      ✓
-  4   NV     104.1       Moderate   10.8      ·
+RANK  ZIP  RISK_SCORE  RISK_TIER  CARE_GAP  SURGE
+  1   00010     118.4       High       13.2      ✓
+  2   90010     108.3       High       11.7      ✓
+  3   20176     106.9       High       12.0      ✓
+  4   20070     104.1       Moderate   10.8      ·
 ─────────────────────────────────────────────────────────────────
-Surge-probable states: 3   |   National avg score: 100.0
+Surge-probable areas: 3   |   National avg score: 100.0
 ```
 
 ---
