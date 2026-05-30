@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ethics and Impact Statement</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 2em;
+    line-height: 1.6;
+  }
+  h1, h2 {
+    color: #2c3e50;
+  }
+</style>
+</head>
+<body>
+
+<h1>Availability, Limitations, Ethics, and Societal Impact Statement</h1>
+<p><em>Mental Health Crisis Early-Warning System (MHCEWS) — MSIM Community Resilience Intelligence Platform</em></p>
+
+<h2>Availability</h2>
+<p>
+MHCEWS is built on publicly available, openly licensed data sources. Primary inputs include the SAMHSA NSDUH State Prevalence Tables (samhsa.gov), CDC BRFSS mental health indicators (data.cdc.gov), and city-level emergency dispatch logs published through municipal open data portals. All sources are accessible without registration or fee. Derived risk records produced by the system are released under the Creative Commons Attribution 4.0 International (CC BY 4.0) license, permitting reuse and redistribution with attribution.
+</p>
+<p>
+The system adheres to FAIR principles. Each risk record is uniquely identified by a composite key of zip_code and ISO 8601 week_start_date (Findable), delivered via a REST API using open HTTP protocols (Accessible), structured using Census FIPS codes and standardized field names consistent with JSON-LD (Interoperable), and accompanied by a provenance block recording data sources, model version, and freshness timestamps (Reusable). Following the OECD (2021) framework on data portability, the same record is simultaneously available as JSON for system integration, CSV for case managers, and GeoJSON for mapping tools — enabling adoption by any jurisdiction without proprietary lock-in.
+</p>
+
+<h2>Limitations</h2>
+<p>
+MHCEWS is intended as a decision-support tool for crisis coordinators and public health organizations. It does not replace clinical judgment, individual mental health assessment, or direct crisis intervention. The system's predictions are probabilistic, not deterministic, and every forecast is accompanied by a confidence score that users must consider when allocating resources.
+</p>
+<p>
+Social media distress signals disproportionately represent younger, English-speaking, and smartphone-owning populations. Communities with lower digital access — including elderly residents, recent immigrants, and lower-income households — are structurally underrepresented in the signal layer, which may cause the system to underestimate risk in the communities that are hardest to reach. Additionally, SAMHSA NSDUH and CDC BRFSS baseline indicators are updated annually and may lag real-world conditions by one to two years. ZIP codes are also imperfect geographic units that can mask severe hyperlocal disparities within a single risk score.
+</p>
+
+<h2>Ethics</h2>
+<p>
+Our ethical framework draws on virtue ethics, consequentialism, and non-consequentialism as outlined in Bender et al. (2022), arXiv:2205.10402.
+</p>
+<ul>
+  <li><strong>Virtue Ethics:</strong> The system is designed with transparency as a foundational value. Every risk score is accompanied by a confidence_score and a provenance block identifying the exact data sources and model version that produced it. Coordinators are trained to treat outputs as decision-support, not decision-replacement, and the system is explicitly designed to make its own uncertainty visible rather than presenting predictions as facts.</li>
+  <li><strong>Consequentialist Ethics:</strong> The primary justification for MHCEWS is the reduction of preventable psychiatric crises through earlier, better-targeted intervention. We weigh this benefit against the risks of false positives — misallocated resources and unnecessary stigmatization of neighborhoods — and false negatives — missed surges and unmet need. Both error types are disclosed to users and tracked through model performance audits. Communities where the model performs substantially worse than average receive supplemental outreach through non-digital channels regardless of the model's score.</li>
+  <li><strong>Non-Consequentialist Ethics:</strong> No individual-level data is collected, stored, or processed. Social media signals are processed as aggregate keyword frequency counts per ZIP code. Dispatch and 211 call data are received as de-identified call volume statistics, not individual case records. Using MHCEWS outputs to surveil, target, or penalize individuals or communities is explicitly prohibited by the data use agreement and constitutes a terms violation.</li>
+</ul>
+
+<h2>Societal Impact</h2>
+<p>
+The intended societal benefit of MHCEWS is a shift from reactive emergency response to preventive resource deployment. In communities where crisis lines are chronically understaffed and mobile crisis teams are perpetually reactive, a 2–4 week predictive window represents a meaningful opportunity to pre-position care before demand overwhelms capacity. The system's care gap scores — which measure the ratio of unmet need to available services by geography — are designed to surface communities that are simultaneously high-need and low-resource, zones that purely reactive systems systematically overlook.
+</p>
+<p>
+At the same time, predictive tools applied to vulnerable populations carry well-documented risks of label harm — the stigmatization of neighborhoods whose risk scores become publicly known or are misapplied in ways that affect insurance pricing, property values, or policing patterns. MHCEWS addresses this through strict access controls: aggregate risk scores are available only to credentialed crisis response organizations and government partners. The system is not intended for use in criminal justice, immigration enforcement, insurance underwriting, employment screening, or any individual-level clinical decision-making. Misuse of outputs for these purposes violates the CC BY 4.0 license conditions and the data use agreement.
+</p>
+<p>
+In the longer term, MHCEWS is designed to function as a portable public good. Built on open standards and CC BY 4.0 licensing, it can be adopted and extended by any city, county, or state without proprietary lock-in, and all adopting jurisdictions are required to contribute aggregated validation data back to a shared model improvement pool. This reflects the OECD (2021) principle that data portability should enhance rather than entrench the concentration of institutional power.
+</p>
+
+<hr>
+<p>
+This statement reflects our commitment to building information systems that are transparent, equitable, and designed in the interest of the communities they serve.
+</p>
+
+</body>
+</html>
