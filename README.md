@@ -140,7 +140,7 @@ Surge-probable states: 3   |   National avg score: 100.0
 
 **SAMHSA NSDUH 2023–2024 State Prevalence Tables**
 
-
+| | |
 |---|---|
 | **Publisher** | Substance Abuse and Mental Health Services Administration |
 | **URL** | <https://www.samhsa.gov/data/data-we-collect/nsduh-national-survey-drug-use-and-health/state-releases> |
