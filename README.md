@@ -1,489 +1,381 @@
 # Mental Health Crisis Early-Warning System (MHCEWS)
 
-> **IMT 542 — Portable Information Structures | Final Project**
-> Group 5 · University of Washington Information School
+**IMT 542 — Portable Information Structures · Group 8 · Cumulative Final Project**
 
-The **Mental Health Crisis Early-Warning System (MHCEWS)** restructures publicly available CDC PLACES mental health data into a portable, queryable information structure that predicts which U.S. ZIP codes are at risk of a mental health crisis surge.
-The original CDC PLACES data is published as a flat, measure-per-row JSON/CSV through a public API — one row per ZIP code per health measure, requiring pivoting and transformation before any analysis is possible. It exists, but it is not portable for crisis response use. MHCEWS transforms it into a typed, ZIP-code-level JSON schema with computed risk fields and a REST API, so that the same data can drive a real-time dashboard, an automated alert, or a mobile crisis team deployment decision.
+A portable information structure for publishing ZIP-code-level weekly mental-health risk records in the United States, built on real federal open-data APIs (CDC PLACES and SAMHSA FindTreatment.gov) and designed end-to-end around the FAIR principles.
 
-**Insight area:** *Predict*.
+> **Scope note.** MHCEWS is a proposed information structure designed for this course. It is not a deployed production service. The example in this repository demonstrates how MHCEWS records can be assembled today from real, publicly accessible federal APIs so that the structure can be implemented immediately on existing open-data infrastructure.
 
 ---
 
 ## Table of Contents
 
-1. [Ideate a Use Case — Info Story, Requirements, Wireframes](#1-ideate-a-use-case--info-story-requirements-wireframes)
-2. [Define and Assess Existing Information Using FAIR](#2-define-and-assess-existing-information-using-fair)
-3. [Analyze Deficiencies and Design Improvements](#3-analyze-deficiencies-and-design-improvements)
-4. [Improve the Existing Information Structure](#4-improve-the-existing-information-structure)
-5. [Control Quality, Performance, and Security](#5-control-quality-performance-and-security)
+1. [Information Story](#information-story)
+2. [Who This Is For](#who-this-is-for)
+3. [FAIR Principles in MHCEWS](#fair-principles-in-mhcews)
+4. [Architecture Overview](#architecture-overview)
+5. [Record Schema — Four Metadata Layers + Provenance](#record-schema--four-metadata-layers--provenance)
+6. [Real Federal APIs Used](#real-federal-apis-used)
+7. [Quickstart](#quickstart)
+8. [API Endpoints](#api-endpoints)
+9. [Example Record](#example-record)
+10. [Quality, Performance, and Security](#quality-performance-and-security)
+11. [Ethics, Limitations, and Responsible Use](#ethics-limitations-and-responsible-use)
+12. [Repository Layout](#repository-layout)
+13. [License](#license)
 
 ---
 
-## 1. Ideate a Use Case — Info Story, Requirements, Wireframes
+## Information Story
 
-### 1.1 Information Story
+In communities where crisis lines are chronically understaffed and mobile crisis teams are perpetually reactive, mental-health surges are detected only after a person calls 911, 988, or 211 — by which point the demand has already become an emergency. The information needed to anticipate these surges *already exists* in the federal open-data ecosystem (CDC PLACES, SAMHSA, BRFSS), but it lives in formats, geographies, and release cycles that make it nearly impossible for a public-health coordinator to act on it in a weekly operational rhythm.
 
-#### Primary User
+**MHCEWS restructures this information so that a King County public-health analyst — or any coordinator in any U.S. jurisdiction — can answer one question every Monday morning:**
 
-| | |
-|---|---|
-| **Role** | 211 crisis line coordinator / state public health analyst |
-| **Organization** | A regional 211 contact center or state behavioral health agency |
-| **Goal** | Allocate weekly staffing and outreach resources across regions |
-| **Decision cadence** | Weekly capacity planning + ad-hoc surge response |
+> *"Which ZIP codes in my region are likely to experience elevated mental-health crisis demand this week, and what should I do about it?"*
 
-#### Problem Statement
+The information story is a shift from **reactive emergency response to preventive resource deployment**. By restructuring annual federal datasets into weekly, ZIP-code-level records with a built-in recommended action, MHCEWS enables a 2–4 week predictive window before demand overwhelms capacity.
 
-When the coordinator opens her week, she has no leading indicator of whether call volume will exceed capacity. The most authoritative source — the SAMHSA NSDUH State Prevalence Tables — is published once a year as a CSV that requires a separate PDF codebook to interpret. By the time she has it cleaned and joined to her own staffing roster, it is already two years stale and offers no computed risk signal. She is forced to make a high-stakes staffing decision either from intuition or from a hand-built spreadsheet.
+## Who This Is For
 
-#### What MHCEWS Delivers
+| User | Goal |
+|------|------|
+| Public-health agency analysts | Decide where to surge mobile crisis team coverage week over week |
+| 988 / crisis-line operators | Anticipate call-volume spikes by geography |
+| Community mental-health organizations | Pre-position outreach resources |
+| Academic researchers | Study spatial and temporal patterns in community mental-health risk with full provenance |
+| Journalists | Report on under-served high-need areas with citable, openly-licensed data |
 
-MHCEWS restructures the same data into a weekly, zip code-level risk signal accessible via API. A single call to `GET /predict/surge` returns a ranked list of states where care gap and serious mental illness prevalence both exceed the national average — a leading indicator of crisis line overflow. The coordinator gets a typed, machine-readable record per state with `risk_score`, `risk_tier`, and an actionable `surge_probable` flag, plus provenance fields so the underlying NSDUH release and model version are traceable.
+---
 
-#### Motivation
+## FAIR Principles in MHCEWS
 
-Mental health crisis response in the United States is delivered by a fragmented network of state agencies, 211 / 988 lines, and community organizations, each making weekly resource decisions on local data. Making the national prevalence signal **portable** — typed, computed, queryable — lets those frontline coordinators act on the same evidence base without each rebuilding a CSV pipeline. The underlying insight already exists in public data; only the information structure prevents it from being used.
+MHCEWS is designed so that **every** FAIR principle is a concrete property of the schema, not just a stated aspiration.
 
-### 1.2 Requirements
+### 🔍 Findable
 
-#### Functional Requirements
+Every record is uniquely identified by a composite key of `zip_code` + ISO 8601 `week_start_date` and described through a four-layer metadata structure — **Identity, Signal, Prediction, Action** — providing both human-readable labels and machine-readable typed values so downstream systems can interpret the data without additional context.
 
-1. Return aggregate mental-health prevalence and a computed risk score.
-2. Support lookup by individual zip-code level abbreviation.
-3. Support filtering by computed risk tier (`High`, `Moderate`, `Low`).
-4. Return a summary endpoint with averages and tier counts.
-5. Return a surge-prediction endpoint listing only zip codes that meet the surge criterion.
-6. Every response must include provenance fields (`data_source`, `model_version`).
-7. The data file backing the API must be regenerable from a single Python script.
+### 🌐 Accessible
 
-#### Portability Requirements (FAIR)
+Records are accessible via a REST API over standard HTTP protocols that are open, free, and universally implementable. Aggregate risk outputs are openly available without authentication, while sensitive data streams (e.g., real-time dispatch logs) are gated behind OAuth 2.0.
 
-| Principle | Requirement |
-|---|---|
-| **Findable** | Each record uniquely identified by `abbr + survey_year`; schema is self-describing; no PDF codebook required to interpret any field. |
-| **Accessible** | Aggregate scores accessible over HTTPS with no authentication; queryable by state, tier, or surge flag; on-demand recomputation. |
-| **Interoperable** | snake_case JSON fields aligned with JSON-LD practice; standard USPS state abbreviations; ISO 8601 dates where applicable; typed numeric fields. |
-| **Reusable** | `data_source` and `model_version` on every record; license clearly stated; transformation logic open-source in this repository. |
+### 🔗 Interoperable
 
-#### In Scope
+All data fields follow `snake_case` conventions aligned with JSON-LD practices, and geographic identifiers use standardized vocabularies — Census **FIPS** and **ZCTA** ZIP codes maintained by the U.S. Census Bureau — ensuring interoperability with any system that adopts these widely used standards.
 
-- Zipcode-level aggregate risk prediction
-- Weekly cadence (model recomputes on demand from the latest CSV release)
-- Public, no-auth read access to aggregate risk scores
-- Surge prediction based on `care_gap × smi_pct`
-- Provenance fields on every record
-- REST API + command-line analysis tool
+### ♻️ Reusable
 
-#### Out of Scope
+Each record includes a detailed **provenance block** capturing `data_source`, `model_version`, and `data_freshness` timestamps for every contributing input, enabling full traceability of how risk scores are generated. Public outputs are released under **Creative Commons Attribution 4.0 (CC BY 4.0)**, ensuring clarity in reuse conditions and supporting transparency and reproducibility.
 
-- Individual-level or ZIP / county-level data
-- Real-time 988 / 211 call-volume integration
-- Clinical diagnostic recommendations
-- Cross-country or international data
-- Write access, user accounts, or user-submitted data
-- OAuth 2.0 / authenticated feeds (listed as future work)
+---
 
-### 1.3 Wireframes
+## Architecture Overview
 
-Because MHCEWS is an API-first product, the "wireframe" is the JSON response contract and the CLI dashboard layout — these are the actual user-facing surfaces.
-
-#### User Flow
-
-```text
-   ┌─────────────────────┐     ┌────────────────────┐     ┌──────────────────┐
-   │ Monday 8:00 AM      │     │  curl /predict/    │     │  Ranked JSON     │
-   │ Coordinator opens   │ ──▶ │  surge             │ ──▶ │  list of states  │
-   │ planning workspace  │     │                    │     │  with risk_tier  │
-   └─────────────────────┘     └────────────────────┘     └──────────────────┘
-                                                                  │
-                                                                  ▼
-                                                       ┌──────────────────────┐
-                                                       │ Update staffing      │
-                                                       │ roster + send alert  │
-                                                       └──────────────────────┘
 ```
-
-#### API Response Wireframe — `GET /states/WA`
-
-```json
-{
-  "identity":   { "state": "Washington", "abbr": "WA" },
-  "signal":     { "any_mi_pct": 24.1, "smi_pct": 6.8,
-                  "mde_pct": 9.2, "tx_rate_pct": 51.4 },
-  "prediction": { "care_gap": 11.7, "risk_score": 108.3, "risk_tier": "High" },
-  "action":     { "surge_probable": true },
-  "provenance": { "data_source": "samhsa_nsduh_2023",
-                  "model_version": "0.1.0",
-                  "survey_year": 2023 }
-}
-```
-
-#### CLI Dashboard Wireframe — `python app.py --risk`
-
-```text
-MHCEWS — High-Risk States (model_version 0.1.0, samhsa_nsduh_2023)
-─────────────────────────────────────────────────────────────────
-RANK  ZIP  RISK_SCORE  RISK_TIER  CARE_GAP  SURGE
-  1   00010     118.4       High       13.2      ✓
-  2   90010     108.3       High       11.7      ✓
-  3   20176     106.9       High       12.0      ✓
-  4   20070     104.1       Moderate   10.8      ·
-─────────────────────────────────────────────────────────────────
-Surge-probable areas: 3   |   National avg score: 100.0
+┌──────────────────────────────────────────────────────────────────┐
+│  UPSTREAM FEDERAL OPEN-DATA SOURCES                              │
+│  ──────────────────────────────────────────                      │
+│  • CDC PLACES ZCTA dataset (Socrata SODA API)                    │
+│  • SAMHSA FindTreatment.gov locator                              │
+│  • 988 Suicide & Crisis Lifeline aggregates (where available)    │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │ HTTPS / JSON
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  MHCEWS TRANSFORMATION PIPELINE                                  │
+│  ──────────────────────────────────                              │
+│  download_cdc_places.py  →  pivot measure-per-row to ZIP-per-row │
+│  enrichment              →  join SAMHSA facility counts          │
+│  risk model              →  composite 0–100 risk_score + tier    │
+│  provenance              →  stamp every record with sources/ver  │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  MHCEWS REST API  (Flask · mhcews_api.py · port 5002)            │
+│  ────────────────────────────────────────────────                │
+│  /zipcodes  ·  /zipcodes/<zip>  ·  /zipcodes/risk/<tier>         │
+│  /summary   ·  /predict/surge   ·  /refresh                      │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │ JSON · CSV · GeoJSON
+                          ▼
+        ┌──────────────────┬──────────────────┬─────────────────┐
+        │ Public-health    │ 988 / crisis     │ Researchers /   │
+        │ analyst dashboard│ dispatch CRM     │ journalists     │
+        └──────────────────┴──────────────────┴─────────────────┘
 ```
 
 ---
 
-## 2. Define and Assess Existing Information Using FAIR
+## Record Schema — Four Metadata Layers + Provenance
 
-### 2.1 Data Source
+Every MHCEWS record is a JSON object organized into four metadata layers plus a provenance block. The composite primary key is `zip_code` + `week_start_date`.
 
-**SAMHSA NSDUH 2023–2024 State Prevalence Tables**
+### Identity Layer — *who and where*
 
-| | |
-|---|---|
-| **Publisher** | Substance Abuse and Mental Health Services Administration |
-| **URL** | <https://www.samhsa.gov/data/data-we-collect/nsduh-national-survey-drug-use-and-health/state-releases> |
-| **Format** | CSV |
-| **Coverage** | All 50 U.S. states, civilian non-institutionalized population aged 12+ |
-| **Update frequency** | Annual |
-| **License** | U.S. Government Open Data (public domain) |
-
-
-### 2.2 Existing Structure
-
-The NSDUH State Prevalence Tables are published as a single flat CSV. Each row is a state; each column is a prevalence measure. Column names use SAMHSA-internal abbreviations (e.g. `AMIPY`, `SMIPY`, `MDEPY`, `TXRECMI`) that cannot be interpreted without the accompanying PDF codebook. Values are untyped — numeric values, suppression markers, and missing flags all appear as strings in the same column.
-
-### 2.3 Original Use Case of the Data
-
-The NSDUH tables are designed for **annual epidemiological reporting**, not for operational decision-making. The intended audience is researchers writing peer-reviewed surveillance articles. The format was not designed for an API consumer, a dashboard, or a weekly staffing decision.
-
-### 2.4 Access Methodology
-
-| Aspect | Original SAMHSA |
-|---|---|
-| Distribution | Annual bulk CSV download from a static URL |
-| Authentication | None |
-| Query interface | None — file is downloaded whole |
-| Programmatic filter | None — requires local processing |
-| Rate limit | N/A (static file) |
-
-### 2.5 Quality of the Existing Data
-
-- **Completeness:** 50 / 50 states present in each annual release.
-- **Suppression:** small-sample cells are suppressed; the suppression marker is a string, not a typed null, requiring downstream cleanup.
-- **Documentation:** column meaning requires the separate codebook PDF; field-level metadata is not embedded in the file.
-- **Staleness:** annual release cadence means up to 24 months of lag between the survey period and the published table.
-
-### 2.6 Performance of the Existing Access Path
-
-A static CSV has no runtime performance — but the operational cost is in the pipeline a consumer has to build every year: download, decode, clean suppression markers, join the codebook, and compute any derived field. There is no programmatic way to ask "which states are above the national average on serious mental illness?"; the consumer must compute it locally each time.
-
-### 2.7 FAIR Assessment of the Original Data
-
-| Principle | Score | Reasoning |
+| Field | Type | Description |
 |---|---|---|
-| **Findable** | 2 / 5 | File URL is hard to locate from the SAMHSA portal; no unique record ID; PDF codebook required to interpret columns. |
-| **Accessible** | 2 / 5 | Bulk download only; annual cadence; no API; no programmatic filtering. |
-| **Interoperable** | 1 / 5 | No schema; non-standard column abbreviations; untyped values; no controlled vocabulary. |
-| **Reusable** | 2 / 5 | No provenance on the record itself; no version number; license stated only on the parent portal. |
+| `zip_code` | string (ZCTA, 5-digit) | U.S. Census ZCTA ZIP code (matches CDC PLACES `locationname`) |
+| `state_fips` | string (2-digit) | Census state FIPS code |
+| `county_fips` | string (5-digit) | Census county FIPS code |
+| `week_start_date` | string (ISO 8601 date) | Monday of the ISO week |
 
----
+### Signal Layer — *the raw inputs*
 
-## 3. Analyze Deficiencies and Design Improvements
-
-### 3.1 Deficiencies Identified
-
-Mapping each deficiency from §2 to a concrete impact on the coordinator's workflow:
-
-| # | Deficiency | Impact on the user |
-|---|---|---|
-| D-1 | Non-self-describing column names (`AMIPY`, `SMIPY`, …) | Coordinator must keep the PDF codebook open at all times to read the CSV. |
-| D-2 | Untyped values, suppression markers as strings | Every consumer must write their own parser; silent breakage if marker format changes. |
-| D-3 | Flat structure with no separation of raw vs. derived | No way to tell which fields are upstream measurements vs. derived analytics. |
-| D-4 | No computed risk signal | Coordinator's actual decision input (a single risk score) does not exist — must be hand-built each time. |
-| D-5 | No tier or surge flag | Continuous prevalence values are not directly usable for a triage decision. |
-| D-6 | No record-level provenance | A risk score in a memo cannot be traced back to which NSDUH release produced it. |
-| D-7 | No programmatic access | Every consumer rebuilds the same CSV-cleaning pipeline. |
-
-### 3.2 Design Improvements
-
-| Deficiency | Improvement |
-|---|---|
-| D-1 | Rename to self-describing snake_case fields (`any_mi_pct`, `smi_pct`, `mde_pct`, `tx_rate_pct`). |
-| D-2 | Cast all numerics to typed floats on load; suppression markers raise a clear, named error. |
-| D-3 | Group fields into a four-layer schema: **Identity / Signal / Prediction / Action**, plus a provenance block. |
-| D-4 | Compute `care_gap` and `risk_score` as derived fields on every request. |
-| D-5 | Map `risk_score` to a categorical `risk_tier`; emit a boolean `surge_probable` flag. |
-| D-6 | Attach `data_source`, `model_version`, and `survey_year` to every record. |
-| D-7 | Expose the entire structure through a Flask REST API queryable by state, tier, or surge flag. |
-
-### 3.3 Transformation Specification
-
-| # | Transformation | Why | How |
+| Field | Type | Description | Upstream source |
 |---|---|---|---|
-| T-1 | Rename SAMHSA columns to self-describing snake_case | D-1 | Static rename in `app.py` / `mhcews_api.py` on CSV load |
-| T-2 | Cast numeric strings to typed floats | D-2 | `float()` on load; suppression markers raise a clear error |
-| T-3 | Group fields into four layers + provenance | D-3 | Layer assignment in the JSON response builder |
-| T-4 | Compute `care_gap` | D-4 | `any_mi_pct - (any_mi_pct × tx_rate_pct / 100)` |
-| T-5 | Compute `risk_score` | D-4 | Weighted formula vs. national averages — see §4.2 |
-| T-6 | Assign `risk_tier` | D-5 | Threshold mapping (`106` / `94`) |
-| T-7 | Set `surge_probable` flag | D-5 | `care_gap > avg AND smi_pct > avg` |
-| T-8 | Attach provenance fields | D-6 | Constants set on each response |
-| T-9 | Expose as REST endpoints | D-7 | Flask routes documented in §4.7 |
+| `frequent_mental_distress_pct` | float (0–100) | % adults reporting frequent mental distress | CDC PLACES `MHLTH` |
+| `social_isolation_pct` | float (0–100) | % adults reporting social isolation | CDC PLACES `ISOLATION` |
+| `lack_emotional_support_pct` | float (0–100) | % adults lacking social/emotional support | CDC PLACES `EMOTIONSPT` |
+| `nearby_treatment_facility_count` | integer | Count of SAMHSA-listed facilities within ZIP | SAMHSA FindTreatment.gov |
 
-**Cadence transformation.** NSDUH is published annually. MHCEWS exposes a weekly-cadence-friendly API by recomputing national averages and tiers **on demand** rather than embedding them in the file. When SAMHSA publishes a new annual release, the operator drops in the new CSV and `model_version` is bumped; consumers see a freshly computed result on their next call. No interpolation is applied between releases — the system is honest about the underlying annual cadence and exposes `survey_year` so consumers can reason about staleness.
+### Prediction Layer — *the model output*
+
+| Field | Type | Description |
+|---|---|---|
+| `risk_score` | float (0–100) | Composite weekly crisis risk score |
+| `risk_tier` | enum | `low` \| `moderate` \| `elevated` \| `high` |
+| `confidence_interval` | object `{lower, upper}` | 95% CI on the risk score |
+| `trend_4wk` | enum | `rising` \| `stable` \| `falling` |
+
+### Action Layer — *what to do about it*
+
+| Field | Type | Description |
+|---|---|---|
+| `recommended_action` | string | Human-readable suggested response |
+| `priority` | enum | `routine` \| `watch` \| `urgent` |
+| `suggested_resources` | array of strings | URIs of relevant local resources (988, SAMHSA, county) |
+
+### Provenance Block
+
+| Field | Type | Description |
+|---|---|---|
+| `data_source` | array of strings | Identifiers of contributing inputs (e.g. `cdc_places_zcta_qnzd-25i4`) |
+| `model_version` | string (semver) | Version of the risk model used |
+| `data_freshness` | object `{source: timestamp}` | Last-updated timestamp per input |
+| `license` | string | `CC-BY-4.0` for MHCEWS-derived outputs |
 
 ---
 
-## 4. Improve the Existing Information Structure
+## Real Federal APIs Used
 
-### 4.1 New Information Structure
-
-Each state record is organized into four metadata layers plus provenance.
-
-#### Identity Layer — *who and where*
-
-| Field | Type | Description |
-|---|---|---|
-| `state` | string | Full state name (e.g. "Washington") |
-| `abbr` | string (2 chars) | USPS state abbreviation (e.g. "WA") |
-
-#### Signal Layer — *the raw inputs*
-
-| Field | Type | Description | Source column |
+| Service | Base URL | Auth | License |
 |---|---|---|---|
-| `any_mi_pct` | float (0–100) | % adults reporting any mental illness | NSDUH `AMIPY` |
-| `smi_pct` | float (0–100) | % adults reporting serious mental illness | NSDUH `SMIPY` |
-| `mde_pct` | float (0–100) | % adults reporting major depressive episode | NSDUH `MDEPY` |
-| `tx_rate_pct` | float (0–100) | % of those with mental illness who received treatment | NSDUH `TXRECMI` |
+| CDC PLACES ZCTA dataset (Socrata SODA) | `https://data.cdc.gov/resource/qnzd-25i4.json` | None (public) | U.S. Government work |
+| CDC PLACES portal | `https://www.cdc.gov/places/` | n/a | n/a |
+| SAMHSA FindTreatment.gov | `https://findtreatment.gov/` | API key on request | Public domain |
+| 988 Suicide & Crisis Lifeline | `https://988lifeline.org/` | n/a | n/a |
 
-#### Prediction Layer — *the model output*
+---
 
-| Field | Type | Description |
-|---|---|---|
-| `care_gap` | float | Untreated-prevalence percentage points |
-| `risk_score` | float | Composite weekly crisis risk score (0–150) |
-| `risk_tier` | enum | `High` \| `Moderate` \| `Low` |
+## Quickstart
 
-#### Action Layer — *what to do about it*
-
-| Field | Type | Description |
-|---|---|---|
-| `surge_probable` | boolean | True if both `care_gap` and `smi_pct` exceed the national average |
-
-#### Provenance Block
-
-| Field | Type | Description |
-|---|---|---|
-| `data_source` | string | Upstream dataset identifier (e.g. `samhsa_nsduh_2023`) |
-| `model_version` | string (semver) | Version of the risk model used to compute this record |
-| `survey_year` | integer | NSDUH survey year |
-
-### 4.2 Risk Score Formula
-
-```text
-care_gap   = any_mi_pct - (any_mi_pct × tx_rate_pct / 100)
-
-risk_score = (any_mi_pct / national_avg_any_mi) × 40
-           + (smi_pct    / national_avg_smi)    × 35
-           + (care_gap   / national_avg_gap)    × 25
-```
-
-Each `national_avg_*` is the unweighted mean of that field across all 50 states in the current CSV release. The three weights (40 / 35 / 25) sum to 100 so a state at exactly the national average on every input scores 100.
-
-- **Tiers:** `High ≥ 106` · `Moderate ≥ 94` · `Low < 94`
-- **Surge flag:** `care_gap > national_avg_gap` AND `smi_pct > national_avg_smi`
-
-### 4.3 Portability vs. Original Structure
-
-MHCEWS changes the source data along **all four** portability dimensions (the rubric requires at least two).
-
-| Dimension | Original SAMHSA CSV | MHCEWS |
-|---|---|---|
-| **Information** | Raw prevalence only | Adds `care_gap`, `risk_score`, `risk_tier`, `surge_probable` |
-| **Structure** | Flat table | Four-layer schema + provenance |
-| **Format** | Untyped CSV with codebook-dependent column names | Typed JSON, snake_case, self-describing |
-| **Access** | Annual bulk download | REST API, queryable by state / tier / surge flag |
-
-### 4.4 Requirements Traceability Matrix
-
-| Req. # | Requirement | Implementation |
-|---|---|---|
-| F-1 | Aggregate prevalence + risk score per state | `GET /states` |
-| F-2 | Lookup by state abbreviation | `GET /states/<abbr>` |
-| F-3 | Filter by risk tier | `GET /states/risk/<tier>` |
-| F-4 | National summary | `GET /summary` |
-| F-5 | Surge prediction | `GET /predict/surge` |
-| F-6 | Provenance on every record | `data_source` + `model_version` in every response |
-| F-7 | Regenerable data file | `generate_sample_data.py` |
-| P-F | Findable: composite key + schema | `abbr + survey_year` on every record |
-| P-A | Accessible: HTTPS, no auth, queryable | Flask REST endpoints |
-| P-I | Interoperable: snake_case JSON, USPS abbr | Response builder in `mhcews_api.py` |
-| P-R | Reusable: provenance + license | Provenance block + CC BY 4.0 |
-
-### 4.5 Repository Structure
-
-```text
-IMT542-Final-Project/
-│
-├── README.md                           # This file
-├── requirements.txt                    # Python dependencies
-│
-├── nsduh_state_mental_health_2023.csv  # Data file (NSDUH structure)
-├── generate_sample_data.py             # Regenerates the CSV if needed
-│
-├── app.py                              # Command-line analysis tool
-├── mhcews_api.py                       # Flask REST API server
-├── test_api.py                         # API test script
-│
-├── G3.json                             # G3: Three ideas (information stories)
-├── IMT542 G5.txt                       # G5: FAIR model statement
-├── MHCEWS_ethics_impact.html           # G6: Ethics and impact statement
-├── samhsa_reformatted.html             # G7: Data quality and security analysis
-├── TESTPLAN.md                         # G9: Test plan
-└── test_results.md                     # Actual measured test results + remediation
-```
-
-### 4.6 Setup and Quick Verification
-
-Python 3.8 or higher required.
+### 1. Clone the repository
 
 ```bash
+git clone https://github.com/<your-org>/mhcews.git
+cd mhcews
+```
+
+### 2. Install dependencies
+
+```bash
+python -m venv venv
+source venv/bin/activate          # on Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-After installation, the system can be verified end-to-end in under one minute:
+### 3. Download the CDC PLACES data
 
 ```bash
-# Terminal 1 — start the API
-python mhcews_api.py
-# → server starts at http://localhost:5002
-
-# Terminal 2 — run the test suite
-python test_api.py
-# → expected: all functional test cases pass
-
-# Terminal 2 — sample queries
-curl http://localhost:5002/states/WA
-curl http://localhost:5002/predict/surge
-curl http://localhost:5002/summary
+python download_cdc_places.py
+# → writes cdc_places_zcta_mh.csv to project root
 ```
 
-If all three `curl` calls return JSON with the documented fields, the system is functioning as described.
+This script pulls all four mental-health measures (`MHLTH`, `DEPRESSION`, `EMOTIONSPT`, `LONELINESS`) from the CDC PLACES SODA API for all ~32,520 ZCTAs.
 
-### 4.7 Command-Line Analysis Tool
-
-```bash
-python app.py              # Full dashboard — all 50 states
-python app.py --state WA   # Single state report
-python app.py --risk       # High-risk states and surge prediction only
-```
-
-### 4.8 REST API
+### 4. Start the API
 
 ```bash
 python mhcews_api.py
-# Server starts at http://localhost:5002
+# → listening on http://localhost:5002
 ```
+
+### 5. Query a ZIP code
+
+```bash
+curl http://localhost:5002/zipcodes/98101
+```
+
+---
+
+## API Endpoints
 
 | Endpoint | Description |
 |---|---|
-| `GET /` | API info |
-| `GET /states` | All 50 states with risk scores |
-| `GET /states/<abbr>` | Single state, e.g. `/states/WA` |
-| `GET /states/risk/<tier>` | Filter by `High` / `Moderate` / `Low` |
+| `GET /` | API metadata and endpoint listing |
+| `GET /zipcodes` | All ZIP codes with risk scores (supports `?sort=` and `?limit=`) |
+| `GET /zipcodes/<zip>` | Single ZIP code lookup |
+| `GET /zipcodes/risk/<tier>` | Filter by `High` / `Moderate` / `Low` |
 | `GET /summary` | National summary statistics |
-| `GET /predict/surge` | States flagged as surge-probable |
+| `GET /predict/surge` | Surge-probable ZIP codes (above national distress + depression averages) |
+| `GET /refresh` | Reload data from the local CSV |
 
-```bash
-# Test all endpoints
-python test_api.py
+---
 
-# Expose publicly via ngrok
-ngrok http 5002
+## Example Record
+
+**Request to CDC PLACES** (Signal-layer input — real, executable, no auth):
+
+```http
+GET /resource/qnzd-25i4.json?locationname=98101&measureid=MHLTH HTTP/1.1
+Host: data.cdc.gov
+Accept: application/json
+```
+
+**Assembled MHCEWS record returned downstream:**
+
+```json
+{
+  "identity": {
+    "zip_code": "98101",
+    "state_fips": "53",
+    "county_fips": "53033",
+    "week_start_date": "2026-05-11"
+  },
+  "signal": {
+    "frequent_mental_distress_pct": 16.8,
+    "social_isolation_pct": 22.1,
+    "lack_emotional_support_pct": 19.4,
+    "nearby_treatment_facility_count": 12
+  },
+  "prediction": {
+    "risk_score": 73.4,
+    "risk_tier": "elevated",
+    "confidence_interval": { "lower": 69.1, "upper": 77.8 },
+    "trend_4wk": "rising"
+  },
+  "action": {
+    "recommended_action": "Increase mobile crisis team coverage and notify local 988 dispatch.",
+    "priority": "urgent",
+    "suggested_resources": [
+      "https://988lifeline.org",
+      "https://findtreatment.gov/locator?zip=98101",
+      "https://kingcounty.gov/depts/community-human-services/mental-health-substance-abuse.aspx"
+    ]
+  },
+  "provenance": {
+    "data_source": [
+      "cdc_places_zcta_qnzd-25i4",
+      "samhsa_findtreatment_locator",
+      "wa_doh_988_aggregate"
+    ],
+    "model_version": "0.1.0-prototype",
+    "data_freshness": {
+      "cdc_places_zcta_qnzd-25i4": "2025-12-11T00:00:00Z",
+      "samhsa_findtreatment_locator": "2026-05-15T00:00:00Z",
+      "wa_doh_988_aggregate": "2026-05-17T23:00:00Z"
+    },
+    "license": "CC-BY-4.0"
+  }
+}
+```
+
+**Interpretation:** the analyst sees `risk_tier: "elevated"` with a rising 4-week trend and an urgent recommended priority. She uses the `recommended_action` text directly in her staffing memo, cites the upstream `data_source` IDs so a reviewer can re-pull the exact CDC PLACES row, and routes the suggested 988 and SAMHSA links to her communications team.
+
+---
+
+## Quality, Performance, and Security
+
+### Quality targets
+
+| Metric | Goal |
+|---|---|
+| API uptime | 99% during active development |
+| Functional test pass rate | 100% before any deployment |
+| Data completeness | All 4 mental-health measures present for every ZIP |
+| Risk score accuracy | Matches formula to 2 decimal places |
+| CDC data freshness | Updated within 90 days of each annual CDC release |
+
+### Performance targets
+
+| Endpoint | Target |
+|---|---|
+| `GET /zipcodes/<zip>` | < 150 ms |
+| `GET /zipcodes` (full dataset) | < 500 ms |
+| `GET /predict/surge` | < 300 ms |
+| 50 concurrent users | < 3 s p95, zero 500 errors |
+| Cold start with full ~32K-ZCTA dataset | < 5 s |
+
+### Data quality checks (run on every ingest)
+
+- All four mental-health measures present per ZIP (warn if any missing)
+- All percentage values fall in `[0, 100]`
+- Confidence interval bounds satisfy `low_ci < data_value < high_ci`
+- No duplicate ZIP codes after pivot
+- `model_version` field stamped on every output record (hard error if missing)
+
+### Security model
+
+- **Aggregate risk outputs** — open, unauthenticated, CC BY 4.0
+- **Sensitive streams** (real-time dispatch logs, individual-level data) — OAuth 2.0, never reach public endpoints
+- **No individual-level data is collected, stored, or processed.** All signals are aggregated to the ZCTA level.
+- **Prohibited uses** (enforced via data use agreement): criminal justice, immigration enforcement, insurance underwriting, employment screening, or any individual-level clinical decision-making.
+
+See [`docs/test_plan.md`](docs/test_plan.md) for the full functional, performance, and monitoring test matrix.
+
+---
+
+## Ethics, Limitations, and Responsible Use
+
+MHCEWS is **decision-support, not decision-replacement**. It does not substitute for clinical judgment, individual mental-health assessment, or direct crisis intervention. Every prediction is published with a confidence interval that consumers are expected to factor into resource allocation.
+
+Known limitations:
+
+- **Baseline lag.** CDC PLACES and BRFSS update annually; predictions may lag real-world conditions by 1–2 years on the slowest inputs.
+- **Geographic coarseness.** ZCTAs can mask hyperlocal disparities within a single risk score.
+- **Underrepresentation.** Communities with lower digital and survey participation — elderly residents, recent immigrants, lower-income households — are structurally underrepresented and may receive systematically lower scores than actual need warrants. Adopting jurisdictions are expected to supplement MHCEWS with non-digital outreach in these communities regardless of score.
+
+See [`docs/ethics_statement.md`](docs/ethics_statement.md) for the full Availability, Limitations, Ethics, and Societal Impact statement, including the virtue-ethics, consequentialist, and non-consequentialist framing.
+
+---
+
+## Repository Layout
+
+```
+mhcews/
+├── README.md                          ← this file
+├── requirements.txt
+├── download_cdc_places.py             ← pulls CDC PLACES via Socrata SODA
+├── mhcews_api.py                      ← Flask API (port 5002)
+├── test_api.py                        ← functional smoke tests
+├── cdc_places_zcta_mh.csv             ← downloaded source data (gitignored)
+├── docs/
+│   ├── information_architecture.md    ← FAIR assessment + schema rationale
+│   ├── test_plan.md                   ← functional / performance / quality tests
+│   ├── ethics_statement.md            ← availability, limitations, ethics
+│   └── wireframes/                    ← coordinator dashboard mockups
+└── presentation/
+    └── MHCEWS_final.pptx              ← in-class presentation deck
 ```
 
 ---
 
-## 5. Control Quality, Performance, and Security
+## License
 
-### 5.1 Quality and Performance Targets
-
-| Metric | Target |
-|---|---|
-| API uptime (during active dev) | ≥ 99 % |
-| Response time p95 | < 500 ms across all endpoints |
-| Data completeness | 50 / 50 states present at load |
-| Functional test pass rate | 100 % before deployment |
-| Risk score range | All scores between 80 and 130 |
-
-The full test plan — including functional, performance, data-quality, alarms, and monitoring requirements — is documented in [`TESTPLAN.md`](./TESTPLAN.md).
-
-### 5.2 Measured Results and Remediation
-
-Actual measured results from running the test plan against the prototype, including any gaps between target and observed performance and the corresponding **remediation plan**, are documented in [`test_results.md`](./test_results.md).
-
-### 5.3 Security and Privacy
-
-- **No personal data.** MHCEWS operates exclusively on state-level aggregates from a public-domain federal release; no individual-level data is collected, stored, or transmitted.
-- **Public-read by design.** Aggregate scores are intended to be openly accessible to any responder, journalist, or researcher; therefore the surface is read-only and no auth is required.
-- **No write endpoints.** The API exposes only `GET` routes; there is no path through which a caller can mutate state.
-- **Provenance enforced.** Every response carries `data_source` and `model_version` so consumers can independently verify the upstream release.
-- **Future hardening.** OAuth 2.0 and rate-limiting are listed as out-of-scope future work for any record-level operational stream (e.g. dispatch logs), should the prototype graduate.
-
-### 5.4 Ethics and Limitations
-
-See [`MHCEWS_ethics_impact.html`](./MHCEWS_ethics_impact.html) for the full statement.
-
-- All data is aggregate (state-level). **No individual-level data is collected or stored.**
-- Intended for public health coordinators and crisis organizations — not for clinical use.
-- Risk scores are probabilistic, not deterministic, and should inform staffing decisions rather than replace local judgment.
-- Outputs released under CC BY 4.0; underlying SAMHSA data is U.S. Government public-domain.
+- **MHCEWS-derived outputs** — [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/)
+- **Upstream sources retain their own licenses:**
+  - CDC PLACES — U.S. Government work (public domain)
+  - SAMHSA FindTreatment.gov — public domain
+- **Code in this repository** — MIT License (see `LICENSE`)
 
 ---
 
 ## Citation
 
-Substance Abuse and Mental Health Services Administration. (2024). *2023–2024 National Survey on Drug Use and Health (NSDUH): State Prevalence Tables.* <https://www.samhsa.gov/data>
-
-*MHCEWS-derived outputs licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).*
-| Data completeness | 50 / 50 states present at load |
-| Functional test pass rate | 100 % before deployment |
-| Risk score range | All scores between 80 and 130 |
+If you use MHCEWS-derived records in research, please cite the upstream `data_source` IDs from each record's provenance block (e.g. `cdc_places_zcta_qnzd-25i4`) and the `model_version` so the exact upstream rows can be re-pulled.
 
 ---
 
-## Ethics and Limitations
-
-See [`MHCEWS_ethics_impact.html`](./MHCEWS_ethics_impact.html) for the full statement.
-
-- All data is aggregate (state-level). **No individual-level data is collected or stored.**
-- Intended for public health coordinators and crisis organizations — not for clinical use.
-- Risk scores are probabilistic, not deterministic, and should inform staffing decisions rather than replace local judgment.
-- Outputs released under CC BY 4.0; underlying SAMHSA data is U.S. Government public-domain.
-
----
-
-## Grading Artifact Index
-
-A direct map from each rubric criterion to the artifact in this repository.
-
-| # | Rubric Criterion | Artifact(s) |
-|---|---|---|
-| 1 | **Information Story Documented** | README §[Information Story](#information-story), §[Requirements](#requirements), `G3.json` |
-| 2 | **Assessment of Existing Information Structures** | README §[Assessment of the Existing Data](#assessment-of-the-existing-data), §[Transformation Specification](#transformation-specification), `samhsa_reformatted.html`, `IMT542 G5.txt` |
-| 3 | **Portable Information Structure from Transformed Existing Information** | README §[Information Structure](#information-structure), §[Portability vs. Original Structure](#portability-vs-original-structure), §[Requirements Traceability Matrix](#requirements-traceability-matrix) |
-| 4 | **Functional Information System** | `mhcews_api.py`, `app.py`, `test_api.py`, README §[Quick Verification](#quick-verification) |
-| 5 | **Document Performance and Quality** | `TESTPLAN.md`, `test_results.md`, README §[Quality and Performance](#quality-and-performance) |
-
----
-
-## Citation
-
-Substance Abuse and Mental Health Services Administration. (2024). *2023–2024 National Survey on Drug Use and Health (NSDUH): State Prevalence Tables.* <https://www.samhsa.gov/data>
-
----
-
-*MHCEWS-derived outputs licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).*
+*MHCEWS · IMT 542 Portable Information Structures · University of Washington Information School*
